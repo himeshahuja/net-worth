@@ -40,4 +40,4 @@ for (const [name, value] of Object.entries(secrets)) {
 }
 // Not a secret: the time zone that dates each snapshot, so the Action's days match this computer's.
 execFileSync('gh', ['variable', 'set', 'SNAPSHOT_TZ', '--body', settings.timeZone], { cwd: root, stdio: ['ignore', 'inherit', 'inherit'] });
-console.log(`Saved ${Object.keys(secrets).length} secrets for ${items.length} connection${items.length === 1 ? '' : 's'}, dated in ${settings.timeZone}. The Action takes a snapshot every morning.`);
+console.log(`Saved ${Object.keys(secrets).length} secrets for ${items.length} connection${items.length === 1 ? '' : 's'}, dated in ${settings.timeZone}. The Action takes a snapshot twice a day.`);
