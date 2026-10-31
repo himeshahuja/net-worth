@@ -2,7 +2,7 @@
 
 Himesh Ahuja's net worth as a password-protected dashboard: read from real bank, brokerage and loan accounts through [Plaid](https://plaid.com), saved twice a day, and published, encrypted, as a static site.
 
-**Live:** https://himeshahuja.github.io/net-worth/
+**Live:** https://himeshahuja.github.io/net-worth/ (password protected; [`?sample`](https://himeshahuja.github.io/net-worth/?sample) shows it with sample figures)
 
 The dashboard has these parts:
 
@@ -34,7 +34,7 @@ It never contains a bank name, an account name or number, or a transaction. Two 
  "types":{"cash.checking":1251,"cash.savings":800,"retirement.roth":3200,"credit.credit card":1840,"loans.student":25000}}
 ```
 
-Plaid keys, access tokens and the page password live in `.env` and `data/` on the owner's computer. Both are gitignored, and `data/` is readable by that user only. The daily GitHub Action gets copies as encrypted repository secrets, and its public log never prints a figure. The page in the browser never talks to Plaid.
+Plaid keys, access tokens and the page password live in `.env` and `data/` on the owner's computer. Both are gitignored, and `data/` is readable by that user only. The GitHub Action gets copies as encrypted repository secrets, and its public log never prints a figure. The page in the browser never talks to Plaid.
 
 **To change the password**, put the old one in `NETWORTH_PREVIOUS_PASSWORD` and the new one in `NETWORTH_PASSWORD`, save a snapshot, then remove the old one and run `npm run secrets`. Copies of the file in git history keep the password they were sealed with.
 
@@ -46,7 +46,7 @@ admin page (localhost only) ─► dev-server API ─► Plaid Link, /item/publi
                                      ▼
                             data/items.<env>.json        access tokens, mode 0600
                                      │
-npm run snapshot, or the daily Action ─► /accounts/get ─► public/networth.json ─► GitHub Pages
+npm run snapshot, or the Action ─────► /accounts/get ─► public/networth.json ─► GitHub Pages
 ```
 
 - **Connecting** ([`admin.html`](admin.html), [`server/api.js`](server/api.js)). The admin page exists only on the Vite dev server, and its API answers only this computer's own pages: it checks the host and origin and requires a custom header. It creates a Link token, opens Plaid Link and exchanges the public token on the server. What you say you're connecting picks the Link product: Transactions for a bank or card, Investments for a brokerage or retirement account, Liabilities for a loan. The other two products are optional, so a bank that also holds your brokerage account comes in as one connection.
@@ -60,11 +60,11 @@ npm run snapshot, or the daily Action ─► /accounts/get ─► public/networt
 - **Twice a day** ([`.github/workflows/publish.yml`](.github/workflows/publish.yml)). At 11:00 and 23:00 UTC (7 AM and 7 PM in New York) the Action takes a snapshot with the stored secrets, commits the re-encrypted file and redeploys the page. The history keeps one figure per day, so the evening run replaces the morning's. A push to `main` redeploys without a snapshot. A failed snapshot fails the run, so GitHub emails you. Action logs on a public repository are public, so a failing connection is named by its position, never by its bank.
 - **The page** ([`src/public/`](src/public/)) is plain React with two hand-written SVG charts and no chart library. Every figure on it comes from `networth.json`: the changes, records and ratios are worked out in the browser ([`src/lib/networth.js`](src/lib/networth.js)).
 
-The balances are the ones Plaid already holds (`/accounts/get`), which Plaid refreshes on its own schedule, typically at least daily. They aren't real-time balance checks, and that's fine for a once-a-day figure. Nothing listens for Plaid webhooks, since a static site has no server to receive them. The daily Action is the update mechanism.
+The balances are the ones Plaid already holds (`/accounts/get`), which Plaid refreshes on its own schedule, typically at least daily. They aren't real-time balance checks, and that's fine for a figure kept once a day. Nothing listens for Plaid webhooks, since a static site has no server to receive them. The scheduled Action is the update mechanism.
 
 ## Running your own
 
-You need Node 22 or later, a free [Plaid account](https://dashboard.plaid.com/signup), and the [GitHub CLI](https://cli.github.com) for the daily snapshots.
+You need Node 22 or later, a free [Plaid account](https://dashboard.plaid.com/signup), and the [GitHub CLI](https://cli.github.com) for the scheduled snapshots.
 
 1. **Install and add keys.** Run `npm install`. Copy `.env.example` to `.env` and fill in `PLAID_CLIENT_ID`, plus the `PLAID_SECRET` for the environment in `PLAID_ENV` (`sandbox` or `production`; each has its own secret). The keys are on the [Keys page](https://dashboard.plaid.com/developers/keys). If you use the [Plaid CLI](https://github.com/plaid/plaid-cli), `plaid keys write --env sandbox --gitignore` writes sandbox keys for you. Then set `NETWORTH_PASSWORD`, the page's password: at least 12 characters, and snapshots refuse to save without it.
 2. **Connect accounts.** Run `npm run dev` and open http://localhost:5180/admin.html. In sandbox, pick any bank and sign in as `user_good` / `pass_good`.
@@ -87,7 +87,7 @@ To make the page yours, change the name and portfolio link in [`src/site.js`](sr
 | --- | --- |
 | `npm run dev` | Dev server with the public page at `/` and the admin page at `/admin.html` (port 5180) |
 | `npm run snapshot` | Save today's snapshot from the terminal |
-| `npm run secrets` | Give the daily Action the Plaid keys, the connections, the page password and the time zone |
+| `npm run secrets` | Give the Action the Plaid keys, the connections, the page password and the time zone |
 | `npm test` | Run the tests |
 | `npm run build` | Build the public page into `dist/` (`BASE_PATH` sets the base, `/net-worth/` by default) |
 | `npm run lint` | Lint |
