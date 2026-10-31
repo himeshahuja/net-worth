@@ -4,8 +4,6 @@ Himesh Ahuja's net worth as a password-protected dashboard: read from real bank,
 
 **Live:** https://himeshahuja.github.io/net-worth/
 
-![The dashboard with sample figures: net worth, assets and liabilities as the chart's tabs, the line over a year with milestone notes, four ratios, and the start of the balance sheet and the list of changes](docs/screenshot.jpg)
-
 The dashboard has these parts:
 
 - **Figures:** net worth, assets and liabilities, each with its change over the chosen range (1M to All). They double as tabs that switch the chart.
