@@ -466,7 +466,6 @@ export default function NetWorth() {
   return (
     <>
       <Bar>
-        {!sealed && <a href={DATA}>Daily figures</a>}
         {sealed && history && <button type="button" className="text-btn bar-btn" onClick={lock}>Lock</button>}
         <a href={site.portfolio}>Portfolio</a>
       </Bar>
