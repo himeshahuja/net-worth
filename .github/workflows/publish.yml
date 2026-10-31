@@ -1,12 +1,12 @@
 name: Snapshot and publish
 
-# Twice a day: read the balances through Plaid, save the day's totals to public/networth.json (the evening run
-# replaces the morning's figure for the same date) and rebuild the page. A push to main rebuilds without a snapshot.
+# On every push to main and twice a week: read the balances through Plaid, save the day's totals to
+# public/networth.json (a later run on the same date replaces that day's figure) and rebuild the page. The bot's own
+# snapshot commit is pushed with the workflow's token, which starts no new run, so this never loops.
 on:
   schedule:
-    # 7 AM and 7 PM in New York (6 AM and 6 PM in winter); GitHub can start them some minutes late
-    - cron: '0 11 * * *'
-    - cron: '0 23 * * *'
+    # Mondays and Thursdays, 7 AM in New York (6 AM in winter); GitHub can start it some minutes late
+    - cron: '0 11 * * 1,4'
   workflow_dispatch:
   push:
     branches: [main]
@@ -34,11 +34,12 @@ jobs:
           cache: npm
       - run: npm ci
 
-      # Skipped on a push, and until `npm run secrets` has stored the keys and connections. When a connection
-      # fails, nothing is saved and the run fails, so GitHub emails the owner to reconnect it.
+      # Skipped until `npm run secrets` has stored the keys and connections. When a connection fails, nothing is
+      # saved: a scheduled run fails, so GitHub emails the owner to reconnect it, while a push still deploys its code.
       - name: Take today's snapshot
         id: snapshot
-        if: github.event_name != 'push' && env.HAS_CONNECTIONS == 'true'
+        if: env.HAS_CONNECTIONS == 'true'
+        continue-on-error: ${{ github.event_name == 'push' }}
         env:
           PLAID_CLIENT_ID: ${{ secrets.PLAID_CLIENT_ID }}
           PLAID_SECRET: ${{ secrets.PLAID_SECRET }}
@@ -59,6 +60,8 @@ jobs:
           git add public/networth.json
           if ! git diff --cached --quiet; then
             git commit -m "Snapshot for $(TZ="${SNAPSHOT_TZ:-America/New_York}" date +%F)"
+            # A push that landed while this run was working would turn this one away; go on top of it first.
+            git pull --rebase origin main
             git push
           fi
 

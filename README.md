@@ -1,6 +1,6 @@
 # Net worth
 
-Himesh Ahuja's net worth as a password-protected dashboard: read from real bank, brokerage and loan accounts through [Plaid](https://plaid.com), saved twice a day, and published, encrypted, as a static site.
+Himesh Ahuja's net worth as a password-protected dashboard: read from real bank, brokerage and loan accounts through [Plaid](https://plaid.com), saved on every push and twice a week, and published, encrypted, as a static site.
 
 **Live:** https://himeshahuja.github.io/net-worth/ (password protected; [`?sample`](https://himeshahuja.github.io/net-worth/?sample) shows it with sample figures)
 
@@ -57,7 +57,7 @@ npm run snapshot, or the Action ─────► /accounts/get ─► public/n
   - It's all or nothing: if any connection fails, nothing is saved, so one expired login can never make the public figure drop.
   - Temporary failures (bank down, rate limit) are retried twice with backoff first.
   - The first production snapshot clears any sandbox history.
-- **Twice a day** ([`.github/workflows/publish.yml`](.github/workflows/publish.yml)). At 11:00 and 23:00 UTC (7 AM and 7 PM in New York) the Action takes a snapshot with the stored secrets, commits the re-encrypted file and redeploys the page. The history keeps one figure per day, so the evening run replaces the morning's. A push to `main` redeploys without a snapshot. A failed snapshot fails the run, so GitHub emails you. Action logs on a public repository are public, so a failing connection is named by its position, never by its bank.
+- **On every push and twice a week** ([`.github/workflows/publish.yml`](.github/workflows/publish.yml)). On each push to `main`, and on Mondays and Thursdays at 11:00 UTC (7 AM in New York), the Action takes a snapshot with the stored secrets, commits the re-encrypted file and redeploys the page. The history keeps one figure per day, so a later run on the same date replaces that day's. The bot's own snapshot commit starts no new run. If a snapshot fails, nothing is saved: a scheduled run fails, so GitHub emails you, while a push still deploys its code. Action logs on a public repository are public, so a failing connection is named by its position, never by its bank.
 - **The page** ([`src/public/`](src/public/)) is plain React with two hand-written SVG charts and no chart library. Every figure on it comes from `networth.json`: the changes, records and ratios are worked out in the browser ([`src/lib/networth.js`](src/lib/networth.js)).
 
 The balances are the ones Plaid already holds (`/accounts/get`), which Plaid refreshes on its own schedule, typically at least daily. They aren't real-time balance checks, and that's fine for a figure kept once a day. Nothing listens for Plaid webhooks, since a static site has no server to receive them. The scheduled Action is the update mechanism.
@@ -70,7 +70,7 @@ You need Node 22 or later, a free [Plaid account](https://dashboard.plaid.com/si
 2. **Connect accounts.** Run `npm run dev` and open http://localhost:5180/admin.html. In sandbox, pick any bank and sign in as `user_good` / `pass_good`.
 3. **Save a snapshot.** Click *Save today's snapshot*, or run `npm run snapshot`. Check the result at http://localhost:5180/, then commit `public/networth.json`.
 4. **Publish.** Push to a GitHub repository and set **Settings → Pages → Source** to **GitHub Actions**. The page is served at `https://<user>.github.io/<repo>/`.
-5. **Snapshot twice a day.** Run `npm run secrets` in the project folder. It stores the keys, the connections and the page password as encrypted secrets, and the snapshot time zone as a variable. Run it again whenever you connect or remove an account; a reconnect doesn't need it. Because the Action commits twice a day, `git pull` before saving a snapshot on your computer.
+5. **Snapshot on every push and twice a week.** Run `npm run secrets` in the project folder. It stores the keys, the connections and the page password as encrypted secrets, and the snapshot time zone as a variable. Run it again whenever you connect or remove an account; a reconnect doesn't need it. Because the Action commits its own snapshots, `git pull` before saving one on your computer.
 
 To make the page yours, change the name and portfolio link in [`src/site.js`](src/site.js), and the title and description in [`index.html`](index.html).
 
