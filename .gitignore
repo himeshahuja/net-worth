@@ -1,0 +1,11 @@
+node_modules
+dist
+.DS_Store
+
+# Plaid keys and bank access tokens: never committed
+.env
+.env.*
+!.env.example
+data/
+
+.taste-skill/

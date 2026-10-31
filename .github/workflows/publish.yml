@@ -1,0 +1,81 @@
+name: Snapshot and publish
+
+# Twice a day: read the balances through Plaid, save the day's totals to public/networth.json (the evening run
+# replaces the morning's figure for the same date) and rebuild the page. A push to main rebuilds without a snapshot.
+on:
+  schedule:
+    # 7 AM and 7 PM in New York (6 AM and 6 PM in winter); GitHub can start them some minutes late
+    - cron: '0 11 * * *'
+    - cron: '0 23 * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write # to commit the snapshot
+  pages: write
+  id-token: write
+
+# One run at a time, and a push never cancels a snapshot halfway.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      HAS_CONNECTIONS: ${{ secrets.PLAID_ACCESS_TOKENS != '' }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+
+      # Skipped on a push, and until `npm run secrets` has stored the keys and connections. When a connection
+      # fails, nothing is saved and the run fails, so GitHub emails the owner to reconnect it.
+      - name: Take today's snapshot
+        id: snapshot
+        if: github.event_name != 'push' && env.HAS_CONNECTIONS == 'true'
+        env:
+          PLAID_CLIENT_ID: ${{ secrets.PLAID_CLIENT_ID }}
+          PLAID_SECRET: ${{ secrets.PLAID_SECRET }}
+          PLAID_ENV: ${{ secrets.PLAID_ENV }}
+          PLAID_ACCESS_TOKENS: ${{ secrets.PLAID_ACCESS_TOKENS }}
+          NETWORTH_PASSWORD: ${{ secrets.NETWORTH_PASSWORD }}
+          SNAPSHOT_TZ: ${{ vars.SNAPSHOT_TZ }}
+        run: npm run snapshot
+
+      # The file is encrypted, so the commit is dated from the clock in the snapshot's time zone.
+      - name: Commit the snapshot
+        if: steps.snapshot.outcome == 'success'
+        env:
+          SNAPSHOT_TZ: ${{ vars.SNAPSHOT_TZ }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add public/networth.json
+          if ! git diff --cached --quiet; then
+            git commit -m "Snapshot for $(TZ="${SNAPSHOT_TZ:-America/New_York}" date +%F)"
+            git push
+          fi
+
+      - run: npm test
+      - run: npm run build
+        env:
+          BASE_PATH: /${{ github.event.repository.name }}/
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
