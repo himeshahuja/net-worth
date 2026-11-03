@@ -1,6 +1,6 @@
 name: Snapshot and publish
 
-# On every push to main and twice a week: read the balances through Plaid, save the day's totals to
+# On every push to main and once an hour: read the balances through Plaid, save the day's totals to
 # public/networth.json (a later run on the same date replaces that day's figure) and rebuild the page. The bot's own
 # snapshot commit is pushed with the workflow's token, which starts no new run, so this never loops.
 on:
