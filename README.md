@@ -1,6 +1,6 @@
 # Net worth
 
-Himesh Ahuja's net worth as a password-protected dashboard: read from real bank, brokerage and loan accounts through [Plaid](https://plaid.com), saved on every push and twice a week, and published, encrypted, as a static site.
+Himesh Ahuja's net worth as a password-protected dashboard: read from real bank, brokerage and loan accounts through [Plaid](https://plaid.com), saved on every push, twice a week and when you open the page, and published, encrypted, as a static site.
 
 **Live:** https://himeshahuja.github.io/net-worth/ (password protected; [`?sample`](https://himeshahuja.github.io/net-worth/?sample) shows it with sample figures)
 
@@ -28,6 +28,8 @@ The whole record is one file, `public/networth.json`, written by the first snaps
 - the number of accounts and when the file was updated.
 
 It never contains a bank name, an account name or number, or a transaction. Two accounts of the same type are published as one total. A test checks this.
+
+Once you've [set it up](#running-your-own), it also holds the GitHub token the page uses to ask for a new snapshot, sealed with the rest. The token is limited to this repository's Actions, so the most it can do is start, cancel or delete workflow runs.
 
 ```json
 {"date":"2026-10-31","cash":2051,"investments":0,"retirement":3200,"other":0,"credit":1840,"loans":25000,
@@ -58,6 +60,7 @@ npm run snapshot, or the Action ─────► /accounts/get ─► public/n
   - Temporary failures (bank down, rate limit) are retried twice with backoff first.
   - The first production snapshot clears any sandbox history.
 - **On every push and twice a week** ([`.github/workflows/publish.yml`](.github/workflows/publish.yml)). On each push to `main`, and on Mondays and Thursdays at 11:00 UTC (7 AM in New York), the Action takes a snapshot with the stored secrets, commits the re-encrypted file and redeploys the page. The history keeps one figure per day, so a later run on the same date replaces that day's. The bot's own snapshot commit starts no new run. If a snapshot fails, nothing is saved: a scheduled run fails, so GitHub emails you, while a push still deploys its code. Action logs on a public repository are public, so a failing connection is named by its position, never by its bank.
+- **When you open the page.** If the figures are over an hour old, the published page starts the Action with the sealed token and shows *Updating…*. Two or three minutes later, when Pages serves the new snapshot, it swaps the figures in. Plaid refreshes balances about once a day, so it never asks more often than hourly. If GitHub refuses, for example because the token expired, it shows *Update failed* with GitHub's status code. `npm run dev` never asks.
 - **The page** ([`src/public/`](src/public/)) is plain React with two hand-written SVG charts and no chart library. Every figure on it comes from `networth.json`: the changes, records and ratios are worked out in the browser ([`src/lib/networth.js`](src/lib/networth.js)).
 
 The balances are the ones Plaid already holds (`/accounts/get`), which Plaid refreshes on its own schedule, typically at least daily. They aren't real-time balance checks, and that's fine for a figure kept once a day. Nothing listens for Plaid webhooks, since a static site has no server to receive them. The scheduled Action is the update mechanism.
@@ -71,6 +74,7 @@ You need Node 22 or later, a free [Plaid account](https://dashboard.plaid.com/si
 3. **Save a snapshot.** Click *Save today's snapshot*, or run `npm run snapshot`. Check the result at http://localhost:5180/, then commit `public/networth.json`.
 4. **Publish.** Push to a GitHub repository and set **Settings → Pages → Source** to **GitHub Actions**. The page is served at `https://<user>.github.io/<repo>/`.
 5. **Snapshot on every push and twice a week.** Run `npm run secrets` in the project folder. It stores the keys, the connections and the page password as encrypted secrets, and the snapshot time zone as a variable. Run it again whenever you connect or remove an account; a reconnect doesn't need it. Because the Action commits its own snapshots, `git pull` before saving one on your computer.
+6. **Update when you open the page** (optional). Create a [fine-grained token](https://github.com/settings/personal-access-tokens/new) with access to this repository only and a single permission, **Actions: Read and write**. Store it as the repository secret `NETWORTH_DISPATCH_TOKEN` (run `gh secret set NETWORTH_DISPATCH_TOKEN` and paste it). The next snapshot seals it into the file. When it expires, the page shows *Update failed (GitHub 401)*; make a new one and store it the same way.
 
 To make the page yours, change the name and portfolio link in [`src/site.js`](src/site.js), and the title and description in [`index.html`](index.html).
 
@@ -94,7 +98,7 @@ To make the page yours, change the name and portfolio link in [`src/site.js`](sr
 
 ## Tests
 
-`npm test` runs 24 tests with Node's built-in runner. Several drive the API over real HTTP against a stand-in for Plaid. They check:
+`npm test` runs 25 tests with Node's built-in runner. Several drive the API over real HTTP against a stand-in for Plaid. They check:
 
 - categories, card balances and the cents arithmetic, and that each category's types add up to its total;
 - the look-backs, highs and lows the dashboard shows;
@@ -103,4 +107,5 @@ To make the page yours, change the name and portfolio link in [`src/site.js`](sr
 - that requests from other sites are refused;
 - that access tokens stay in a `0600` file and never appear in a response or in the published file;
 - that the published file opens only with the password, and that a password change carries the history over;
+- that the page's GitHub token is sealed in by the Action alone, and never appears unencrypted;
 - that reconnecting uses update mode, and that removing a connection removes it at Plaid.

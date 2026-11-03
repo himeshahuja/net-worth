@@ -1,8 +1,9 @@
 name: Snapshot and publish
 
-# On every push to main and once an hour: read the balances through Plaid, save the day's totals to
-# public/networth.json (a later run on the same date replaces that day's figure) and rebuild the page. The bot's own
-# snapshot commit is pushed with the workflow's token, which starts no new run, so this never loops.
+# On every push to main, once an hour, and when the page is opened on figures over an hour old: read the balances
+# through Plaid, save the day's totals to public/networth.json (a later run on the same date replaces that day's
+# figure) and rebuild the page. The bot's own snapshot commit is pushed with the workflow's token, which starts no new
+# run, so this never loops.
 on:
   schedule:
     - cron: '0 * * * *'
@@ -34,7 +35,8 @@ jobs:
       - run: npm ci
 
       # Skipped until `npm run secrets` has stored the keys and connections. When a connection fails, nothing is
-      # saved: a scheduled run fails, so GitHub emails the owner to reconnect it, while a push still deploys its code.
+      # saved: a scheduled or page-started run fails, so GitHub emails the owner to reconnect it, while a push still
+      # deploys its code.
       - name: Take today's snapshot
         id: snapshot
         if: env.HAS_CONNECTIONS == 'true'
@@ -45,6 +47,8 @@ jobs:
           PLAID_ENV: ${{ secrets.PLAID_ENV }}
           PLAID_ACCESS_TOKENS: ${{ secrets.PLAID_ACCESS_TOKENS }}
           NETWORTH_PASSWORD: ${{ secrets.NETWORTH_PASSWORD }}
+          # Optional. Sealed into the file with the figures, so the page can start this workflow when it is opened.
+          NETWORTH_DISPATCH_TOKEN: ${{ secrets.NETWORTH_DISPATCH_TOKEN }}
           SNAPSHOT_TZ: ${{ vars.SNAPSHOT_TZ }}
         run: npm run snapshot
 
@@ -65,9 +69,8 @@ jobs:
           fi
 
       - run: npm test
-      - run: npm run build
-        env:
-          BASE_PATH: /${{ github.event.repository.name }}/
+      # The repository's name from the environment: a scheduled run has no event payload to read it from.
+      - run: BASE_PATH="/${GITHUB_REPOSITORY#*/}/" npm run build
       - uses: actions/upload-pages-artifact@v4
         with:
           path: dist

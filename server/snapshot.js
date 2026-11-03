@@ -1,6 +1,7 @@
 // A snapshot: every connected account's balance, totalled by category and type, saved as one day in
 // public/networth.json, encrypted with the page's password. That file is the whole public record: totals per day,
 // the number of accounts and when it was updated. No bank, account name, number or transaction is ever written to it.
+// In the Action it also carries, sealed with the rest, the token the page uses to ask for the next snapshot.
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { plaidError } from './plaid.js';
@@ -80,14 +81,25 @@ export function withDay(history, { date, totals, types, accounts, source, update
   return { currency: 'USD', source, updated, accounts, days };
 }
 
-export async function takeSnapshot({ plaid, items, source, timeZone, file, password, previous, now = new Date() }) {
+// In the Action, with the owner's NETWORTH_DISPATCH_TOKEN: how the page can start this workflow again. Elsewhere, null.
+export function dispatchOf(env) {
+  const token = env.NETWORTH_DISPATCH_TOKEN?.trim();
+  if (!token || !env.GITHUB_WORKFLOW_REF) return null;
+  // GITHUB_WORKFLOW_REF reads owner/repo/.github/workflows/publish.yml@refs/heads/main.
+  const workflow = path.basename(env.GITHUB_WORKFLOW_REF.split('@')[0]);
+  return { url: `https://api.github.com/repos/${env.GITHUB_REPOSITORY}/actions/workflows/${workflow}/dispatches`, ref: env.GITHUB_REF_NAME, token };
+}
+
+export async function takeSnapshot({ plaid, items, source, timeZone, file, password, previous, dispatch, now = new Date() }) {
   checkPassword(password);
   if (!items.length) throw new Error('No accounts are connected yet.');
   const saved = await loadHistory(file, { password, previous });
   const { totals, types, counted, skipped } = totalsOf(await readAccounts(plaid, items));
   const history = withDay(saved.history, { date: dateIn(timeZone, now), totals, types, accounts: counted, source, updated: now.toISOString() });
+  // withDay keeps only the figures, so the token is never carried over: each snapshot seals in the one it was given.
+  const sealed = await seal(dispatch ? { ...history, dispatch } : history, password, saved.salt);
   await fs.mkdir(path.dirname(file), { recursive: true });
-  await fs.writeFile(`${file}.tmp`, `${JSON.stringify(await seal(history, password, saved.salt))}\n`);
+  await fs.writeFile(`${file}.tmp`, `${JSON.stringify(sealed)}\n`);
   await fs.rename(`${file}.tmp`, file);
   return { history, skipped };
 }

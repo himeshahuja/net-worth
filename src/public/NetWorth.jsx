@@ -27,6 +27,42 @@ async function loadHistory() {
   return { history: sampleHistory() };
 }
 
+// Figures over an hour old, once opened on the published page, ask the Action for a new snapshot with the token it
+// sealed in, and give way to that snapshot when Pages serves it. Plaid refreshes balances about once a day, so asking
+// more often would only add commits.
+const HOUR = 60 * 60 * 1000;
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function askFor(file, { history, key }) {
+  const stale = Date.now() - Date.parse(history.updated) > HOUR;
+  return import.meta.env.PROD && history.dispatch && stale ? { file, key, dispatch: history.dispatch } : null;
+}
+
+// Starts the workflow; returns null, or what to show when GitHub refused.
+async function askForSnapshot({ url, ref, token }) {
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { Accept: 'application/vnd.github+json', Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ref }),
+    });
+    return res.ok ? null : `Update failed (GitHub ${res.status})`;
+  } catch {
+    return 'Update failed (offline)';
+  }
+}
+
+// The next snapshot once Pages serves it (each seal has a fresh IV). A run takes two or three minutes; after six,
+// null, and the next visit shows it.
+async function published(file, live) {
+  for (let i = 0; i < 24 && live(); i++) {
+    await sleep(15_000);
+    const { sealed } = await loadHistory();
+    if (sealed && sealed.iv !== file.iv) return sealed;
+  }
+  return null;
+}
+
 // The key from the last opening, kept for this tab, or on this device when asked. It opens the next day's file too,
 // as the salt stays the same until the password changes. Storage can be missing or blocked, so every use is guarded.
 const KEY = 'net-worth-key';
@@ -66,9 +102,9 @@ function Lock({ file, onOpen }) {
     event.preventDefault();
     setState('opening');
     try {
-      const { history, key } = await open(file, { password });
-      remember(file, key, onDevice);
-      onOpen(history);
+      const opened = await open(file, { password });
+      remember(file, opened.key, onDevice);
+      onOpen(opened);
     } catch {
       setState('wrong');
     }
@@ -134,7 +170,7 @@ function finding(days) {
   return `${way} ${money(Math.abs(month.net))} ${from}${ytd}.`;
 }
 
-function TitleRow({ history, ranges, range, onRange }) {
+function TitleRow({ history, update, ranges, range, onRange }) {
   const label = SOURCE[history.source];
   return (
     <div className="title-row">
@@ -146,6 +182,7 @@ function TitleRow({ history, ranges, range, onRange }) {
         <p className="stamp">
           {label && <span className="pill warn">{label}</span>}
           <span>{history.source === 'sample' ? `${history.accounts} sample accounts` : `${history.accounts} accounts via Plaid · updated ${stamp(history.updated)}`}</span>
+          {update && <span className={update.failed ? 'pill bad' : 'pill'} role="status">{update.failed ?? 'Updating…'}</span>}
         </p>
         {ranges.length > 1 && (
           <div className="segmented" role="group" aria-label="Range">
@@ -414,7 +451,7 @@ function Loading() {
   );
 }
 
-function Dashboard({ history }) {
+function Dashboard({ history, update }) {
   const { days } = history;
   const end = days.at(-1).date;
   const ranges = RANGES.filter(([key, length]) => key === 'All' || length < daysBetween(days[0].date, end));
@@ -428,7 +465,7 @@ function Dashboard({ history }) {
   const rangeLabel = start ? `since ${since(start.date, end)}` : null;
   return (
     <>
-      <TitleRow history={history} ranges={ranges} range={range} onRange={setRange} />
+      <TitleRow history={history} update={update} ranges={ranges} range={range} onRange={setRange} />
       <div className="grid">
         <Overview days={days} shown={shown} base={start} series={series} onSeries={setSeries} />
         <BalanceSheet days={days} base={start} rangeLabel={rangeLabel} />
@@ -445,13 +482,17 @@ function Dashboard({ history }) {
 export default function NetWorth() {
   const [history, setHistory] = useState(null);
   const [sealed, setSealed] = useState(null);
+  // A new snapshot being asked for, from askFor(), with `failed` once GitHub has refused it.
+  const [ask, setAsk] = useState(null);
   useEffect(() => {
     loadHistory().then(async (loaded) => {
       if (!loaded.sealed) return setHistory(loaded.history);
       const key = rememberedKey(loaded.sealed);
       if (key) {
         try {
-          return setHistory((await open(loaded.sealed, { key })).history);
+          const opened = await open(loaded.sealed, { key });
+          setHistory(opened.history);
+          return setAsk(askFor(loaded.sealed, opened));
         } catch {
           forget();
         }
@@ -459,9 +500,32 @@ export default function NetWorth() {
       setSealed(loaded.sealed);
     });
   }, []);
+  useEffect(() => {
+    if (!ask || ask.failed) return;
+    let live = true;
+    (async () => {
+      const failed = await askForSnapshot(ask.dispatch);
+      const next = failed ? null : await published(ask.file, () => live);
+      const opened = next && (await open(next, { key: ask.key }).catch(() => null));
+      if (!live) return;
+      if (opened) {
+        setHistory(opened.history);
+        setSealed((current) => current && next);
+      }
+      setAsk(failed ? { ...ask, failed } : null);
+    })();
+    return () => {
+      live = false;
+    };
+  }, [ask]);
+  const unlocked = (opened) => {
+    setHistory(opened.history);
+    setAsk(askFor(sealed, opened));
+  };
   const lock = () => {
     forget();
     setHistory(null);
+    setAsk(null);
   };
   return (
     <>
@@ -470,7 +534,7 @@ export default function NetWorth() {
         <a href={site.portfolio}>Portfolio</a>
       </Bar>
       <main className="page">
-        {history ? <Dashboard history={history} /> : sealed ? <Lock file={sealed} onOpen={setHistory} /> : (
+        {history ? <Dashboard history={history} update={ask && { failed: ask.failed }} /> : sealed ? <Lock file={sealed} onOpen={unlocked} /> : (
           <>
             <div className="title-row"><div><h1>Net worth</h1><p className="finding">&nbsp;</p></div></div>
             <Loading />
