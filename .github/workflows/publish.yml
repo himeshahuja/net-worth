@@ -5,8 +5,7 @@ name: Snapshot and publish
 # snapshot commit is pushed with the workflow's token, which starts no new run, so this never loops.
 on:
   schedule:
-    # Mondays and Thursdays, 7 AM in New York (6 AM in winter); GitHub can start it some minutes late
-    - cron: '*/5 * * * *'
+    - cron: '27 * * * *'
   workflow_dispatch:
   push:
     branches: [main]
