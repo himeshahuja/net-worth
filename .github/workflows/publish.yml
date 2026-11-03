@@ -5,7 +5,7 @@ name: Snapshot and publish
 # snapshot commit is pushed with the workflow's token, which starts no new run, so this never loops.
 on:
   schedule:
-    - cron: '27 * * * *'
+    - cron: '0 * * * *'
   workflow_dispatch:
   push:
     branches: [main]
