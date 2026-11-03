@@ -27,29 +27,51 @@ async function loadHistory() {
   return { history: sampleHistory() };
 }
 
-// Figures over an hour old, once opened on the published page, ask the Action for a new snapshot with the token it
-// sealed in, and give way to that snapshot when Pages serves it. Plaid refreshes balances about once a day, so asking
-// more often would only add commits.
+// Every opening of the published page asks the Action for a new snapshot with the token it sealed in, and gives way
+// to that snapshot when Pages serves it. Each ask leaves a mark on this device that lasts an hour, so a reload or a
+// second tab in that hour does not start another run.
 const HOUR = 60 * 60 * 1000;
+const ASKED = 'net-worth-asked';
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-function askFor(file, { history, key }) {
-  const stale = Date.now() - Date.parse(history.updated) > HOUR;
-  return import.meta.env.PROD && history.dispatch && stale ? { file, key, dispatch: history.dispatch } : null;
+function askedWithinTheHour() {
+  try {
+    return Date.now() - Number(localStorage.getItem(ASKED)) < HOUR;
+  } catch {
+    return false; // storage blocked: every opening asks
+  }
+}
+function markAsked(on) {
+  try {
+    if (on) localStorage.setItem(ASKED, String(Date.now()));
+    else localStorage.removeItem(ASKED);
+  } catch {
+    // storage blocked
+  }
 }
 
-// Starts the workflow; returns null, or what to show when GitHub refused.
+function askFor(file, { history, key }) {
+  return import.meta.env.PROD && history.dispatch && !askedWithinTheHour() ? { file, key, dispatch: history.dispatch } : null;
+}
+
+// Starts the workflow; returns null, or what to show when GitHub refused. The mark goes down before the request, so a
+// reload while it is in flight does not send a second one, and comes off again if GitHub refuses, so the next
+// opening can retry.
 async function askForSnapshot({ url, ref, token }) {
+  markAsked(true);
+  let failed = null;
   try {
     const res = await fetch(url, {
       method: 'POST',
       headers: { Accept: 'application/vnd.github+json', Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ ref }),
     });
-    return res.ok ? null : `Update failed (GitHub ${res.status})`;
+    if (!res.ok) failed = `Update failed (GitHub ${res.status})`;
   } catch {
-    return 'Update failed (offline)';
+    failed = 'Update failed (offline)';
   }
+  if (failed) markAsked(false);
+  return failed;
 }
 
 // The next snapshot once Pages serves it (each seal has a fresh IV). A run takes two or three minutes; after six,
