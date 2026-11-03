@@ -27,64 +27,6 @@ async function loadHistory() {
   return { history: sampleHistory() };
 }
 
-// Every opening of the published page asks the Action for a new snapshot with the token it sealed in, and gives way
-// to that snapshot when Pages serves it. Each ask leaves a mark on this device that lasts an hour, so a reload or a
-// second tab in that hour does not start another run.
-const HOUR = 60 * 60 * 1000;
-const ASKED = 'net-worth-asked';
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-function askedWithinTheHour() {
-  try {
-    return Date.now() - Number(localStorage.getItem(ASKED)) < HOUR;
-  } catch {
-    return false; // storage blocked: every opening asks
-  }
-}
-function markAsked(on) {
-  try {
-    if (on) localStorage.setItem(ASKED, String(Date.now()));
-    else localStorage.removeItem(ASKED);
-  } catch {
-    // storage blocked
-  }
-}
-
-function askFor(file, { history, key }) {
-  return import.meta.env.PROD && history.dispatch && !askedWithinTheHour() ? { file, key, dispatch: history.dispatch } : null;
-}
-
-// Starts the workflow; returns null, or what to show when GitHub refused. The mark goes down before the request, so a
-// reload while it is in flight does not send a second one, and comes off again if GitHub refuses, so the next
-// opening can retry.
-async function askForSnapshot({ url, ref, token }) {
-  markAsked(true);
-  let failed = null;
-  try {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { Accept: 'application/vnd.github+json', Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ref }),
-    });
-    if (!res.ok) failed = `Update failed (GitHub ${res.status})`;
-  } catch {
-    failed = 'Update failed (offline)';
-  }
-  if (failed) markAsked(false);
-  return failed;
-}
-
-// The next snapshot once Pages serves it (each seal has a fresh IV). A run takes two or three minutes; after six,
-// null, and the next visit shows it.
-async function published(file, live) {
-  for (let i = 0; i < 24 && live(); i++) {
-    await sleep(15_000);
-    const { sealed } = await loadHistory();
-    if (sealed && sealed.iv !== file.iv) return sealed;
-  }
-  return null;
-}
-
 // The key from the last opening, kept for this tab, or on this device when asked. It opens the next day's file too,
 // as the salt stays the same until the password changes. Storage can be missing or blocked, so every use is guarded.
 const KEY = 'net-worth-key';
@@ -124,9 +66,9 @@ function Lock({ file, onOpen }) {
     event.preventDefault();
     setState('opening');
     try {
-      const opened = await open(file, { password });
-      remember(file, opened.key, onDevice);
-      onOpen(opened);
+      const { history, key } = await open(file, { password });
+      remember(file, key, onDevice);
+      onOpen(history);
     } catch {
       setState('wrong');
     }
@@ -192,7 +134,7 @@ function finding(days) {
   return `${way} ${money(Math.abs(month.net))} ${from}${ytd}.`;
 }
 
-function TitleRow({ history, update, ranges, range, onRange }) {
+function TitleRow({ history, ranges, range, onRange }) {
   const label = SOURCE[history.source];
   return (
     <div className="title-row">
@@ -204,7 +146,6 @@ function TitleRow({ history, update, ranges, range, onRange }) {
         <p className="stamp">
           {label && <span className="pill warn">{label}</span>}
           <span>{history.source === 'sample' ? `${history.accounts} sample accounts` : `${history.accounts} accounts via Plaid · updated ${stamp(history.updated)}`}</span>
-          {update && <span className={update.failed ? 'pill bad' : 'pill'} role="status">{update.failed ?? 'Updating…'}</span>}
         </p>
         {ranges.length > 1 && (
           <div className="segmented" role="group" aria-label="Range">
@@ -473,7 +414,7 @@ function Loading() {
   );
 }
 
-function Dashboard({ history, update }) {
+function Dashboard({ history }) {
   const { days } = history;
   const end = days.at(-1).date;
   const ranges = RANGES.filter(([key, length]) => key === 'All' || length < daysBetween(days[0].date, end));
@@ -487,7 +428,7 @@ function Dashboard({ history, update }) {
   const rangeLabel = start ? `since ${since(start.date, end)}` : null;
   return (
     <>
-      <TitleRow history={history} update={update} ranges={ranges} range={range} onRange={setRange} />
+      <TitleRow history={history} ranges={ranges} range={range} onRange={setRange} />
       <div className="grid">
         <Overview days={days} shown={shown} base={start} series={series} onSeries={setSeries} />
         <BalanceSheet days={days} base={start} rangeLabel={rangeLabel} />
@@ -504,17 +445,13 @@ function Dashboard({ history, update }) {
 export default function NetWorth() {
   const [history, setHistory] = useState(null);
   const [sealed, setSealed] = useState(null);
-  // A new snapshot being asked for, from askFor(), with `failed` once GitHub has refused it.
-  const [ask, setAsk] = useState(null);
   useEffect(() => {
     loadHistory().then(async (loaded) => {
       if (!loaded.sealed) return setHistory(loaded.history);
       const key = rememberedKey(loaded.sealed);
       if (key) {
         try {
-          const opened = await open(loaded.sealed, { key });
-          setHistory(opened.history);
-          return setAsk(askFor(loaded.sealed, opened));
+          return setHistory((await open(loaded.sealed, { key })).history);
         } catch {
           forget();
         }
@@ -522,32 +459,9 @@ export default function NetWorth() {
       setSealed(loaded.sealed);
     });
   }, []);
-  useEffect(() => {
-    if (!ask || ask.failed) return;
-    let live = true;
-    (async () => {
-      const failed = await askForSnapshot(ask.dispatch);
-      const next = failed ? null : await published(ask.file, () => live);
-      const opened = next && (await open(next, { key: ask.key }).catch(() => null));
-      if (!live) return;
-      if (opened) {
-        setHistory(opened.history);
-        setSealed((current) => current && next);
-      }
-      setAsk(failed ? { ...ask, failed } : null);
-    })();
-    return () => {
-      live = false;
-    };
-  }, [ask]);
-  const unlocked = (opened) => {
-    setHistory(opened.history);
-    setAsk(askFor(sealed, opened));
-  };
   const lock = () => {
     forget();
     setHistory(null);
-    setAsk(null);
   };
   return (
     <>
@@ -556,7 +470,7 @@ export default function NetWorth() {
         <a href={site.portfolio}>Portfolio</a>
       </Bar>
       <main className="page">
-        {history ? <Dashboard history={history} update={ask && { failed: ask.failed }} /> : sealed ? <Lock file={sealed} onOpen={unlocked} /> : (
+        {history ? <Dashboard history={history} /> : sealed ? <Lock file={sealed} onOpen={setHistory} /> : (
           <>
             <div className="title-row"><div><h1>Net worth</h1><p className="finding">&nbsp;</p></div></div>
             <Loading />

@@ -5,7 +5,7 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { categoryOf, balanceOf, totalsOf } from './accounts.js';
-import { checkPassword, dateIn, dispatchOf, loadHistory, readAccounts, takeSnapshot, withDay } from './snapshot.js';
+import { checkPassword, dateIn, loadHistory, readAccounts, withDay } from './snapshot.js';
 import { createApi } from './api.js';
 import { isSealed, open, seal } from '../src/lib/vault.js';
 
@@ -91,27 +91,6 @@ test('the figures open only with the password, and a password change carries the
     await assert.rejects(loadHistory(file, { password: 'a brand new phrase' }), /does not open/);
     assert.throws(() => checkPassword('short'), /12 characters/);
     assert.throws(() => checkPassword(null), /NETWORTH_PASSWORD/);
-  } finally {
-    await fs.rm(dir, { recursive: true, force: true });
-  }
-});
-
-test('the page’s token for asking a snapshot is sealed in by the Action alone, and never carried over', async () => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'net-worth-dispatch-'));
-  const file = path.join(dir, 'networth.json');
-  const plaid = { accountsGet: async () => ({ data: { accounts: [account('depository', 'checking', 10)] } }) };
-  const snapshot = (dispatch) => takeSnapshot({ plaid, items: [{ accessToken: 'a' }], source: 'sandbox', timeZone: 'America/New_York', file, password: PASSWORD, dispatch });
-  const reopen = async () => (await open(JSON.parse(await fs.readFile(file, 'utf8')), { password: PASSWORD })).history;
-  try {
-    assert.equal(dispatchOf({ NETWORTH_DISPATCH_TOKEN: 'github_pat_SECRET' }), null);
-    const dispatch = dispatchOf({ NETWORTH_DISPATCH_TOKEN: ' github_pat_SECRET ', GITHUB_REPOSITORY: 'me/net-worth', GITHUB_REF_NAME: 'main', GITHUB_WORKFLOW_REF: 'me/net-worth/.github/workflows/publish.yml@refs/heads/main' });
-    assert.deepEqual(dispatch, { url: 'https://api.github.com/repos/me/net-worth/actions/workflows/publish.yml/dispatches', ref: 'main', token: 'github_pat_SECRET' });
-
-    assert.equal((await snapshot(dispatch)).history.dispatch, undefined);
-    assert.ok(!(await fs.readFile(file, 'utf8')).includes('github_pat_SECRET'));
-    assert.deepEqual((await reopen()).dispatch, dispatch);
-    await snapshot(null);
-    assert.equal((await reopen()).dispatch, undefined);
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }

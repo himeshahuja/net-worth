@@ -1,0 +1,16 @@
+# Starts the snapshot workflow on a schedule. Deploy with `npx wrangler deploy` from this folder, after
+# `npx wrangler secret put GITHUB_TOKEN` (see the README).
+name = "net-worth-snapshot"
+main = "index.js"
+compatibility_date = "2026-10-01"
+# Nothing to serve: the Worker only runs on its schedule.
+workers_dev = false
+
+[triggers]
+# Every hour, on the hour (UTC).
+crons = ["0 * * * *"]
+
+[vars]
+REPO = "himeshahuja/net-worth"
+WORKFLOW = "publish.yml"
+REF = "main"

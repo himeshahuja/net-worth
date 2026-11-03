@@ -9,3 +9,6 @@ dist
 data/
 
 .taste-skill/
+
+# Wrangler's local state for the Worker
+.wrangler/

@@ -59,8 +59,7 @@ npm run snapshot, or the Action ─────► /accounts/get ─► public/n
   - It's all or nothing: if any connection fails, nothing is saved, so one expired login can never make the public figure drop.
   - Temporary failures (bank down, rate limit) are retried twice with backoff first.
   - The first production snapshot clears any sandbox history.
-- **On every push and twice a week** ([`.github/workflows/publish.yml`](.github/workflows/publish.yml)). On each push to `main`, and on Mondays and Thursdays at 11:00 UTC (7 AM in New York), the Action takes a snapshot with the stored secrets, commits the re-encrypted file and redeploys the page. The history keeps one figure per day, so a later run on the same date replaces that day's. The bot's own snapshot commit starts no new run. If a snapshot fails, nothing is saved: a scheduled run fails, so GitHub emails you, while a push still deploys its code. Action logs on a public repository are public, so a failing connection is named by its position, never by its bank.
-- **When you open the page.** Each time the published page is opened, it starts the Action with the sealed token and shows *Updating…*. Two or three minutes later, when Pages serves the new snapshot, it swaps the figures in. It then leaves a mark in the browser that lasts an hour, so reloading or opening a second tab within that hour doesn't start another run. If GitHub refuses, for example because the token expired, it shows *Update failed* with GitHub's status code. `npm run dev` never asks.
+- **On every push, and hourly** ([`.github/workflows/publish.yml`](.github/workflows/publish.yml)). On each push to `main`, and each hour when the Cloudflare Worker in [`worker/`](worker/) starts it, the Action takes a snapshot with the stored secrets, commits the re-encrypted file and redeploys the page. GitHub's own `schedule` trigger never fired for this repository, so the Worker keeps the time. The history keeps one figure per day, so a later run on the same date replaces that day's. The bot's own snapshot commit starts no new run. If a snapshot fails, nothing is saved: a run the Worker started fails, so GitHub emails you, while a push still deploys its code. Action logs on a public repository are public, so a failing connection is named by its position, never by its bank.
 - **The page** ([`src/public/`](src/public/)) is plain React with two hand-written SVG charts and no chart library. Every figure on it comes from `networth.json`: the changes, records and ratios are worked out in the browser ([`src/lib/networth.js`](src/lib/networth.js)).
 
 The balances are the ones Plaid already holds (`/accounts/get`), which Plaid refreshes on its own schedule, typically at least daily. They aren't real-time balance checks, and that's fine for a figure kept once a day. Nothing listens for Plaid webhooks, since a static site has no server to receive them. The scheduled Action is the update mechanism.
@@ -74,7 +73,14 @@ You need Node 22 or later, a free [Plaid account](https://dashboard.plaid.com/si
 3. **Save a snapshot.** Click *Save today's snapshot*, or run `npm run snapshot`. Check the result at http://localhost:5180/, then commit `public/networth.json`.
 4. **Publish.** Push to a GitHub repository and set **Settings → Pages → Source** to **GitHub Actions**. The page is served at `https://<user>.github.io/<repo>/`.
 5. **Snapshot on every push and twice a week.** Run `npm run secrets` in the project folder. It stores the keys, the connections and the page password as encrypted secrets, and the snapshot time zone as a variable. Run it again whenever you connect or remove an account; a reconnect doesn't need it. Because the Action commits its own snapshots, `git pull` before saving one on your computer.
-6. **Update when you open the page** (optional). Create a [fine-grained token](https://github.com/settings/personal-access-tokens/new) with access to this repository only and a single permission, **Actions: Read and write**. Store it as the repository secret `NETWORTH_DISPATCH_TOKEN` (run `gh secret set NETWORTH_DISPATCH_TOKEN` and paste it). The next snapshot seals it into the file. When it expires, the page shows *Update failed (GitHub 401)*; make a new one and store it the same way.
+6. **Run it every hour.** Create a [fine-grained token](https://github.com/settings/personal-access-tokens/new) with access to this repository only and a single permission, **Actions: Read and write**. Then deploy the Worker, which is free on Cloudflare's plan:
+   ```sh
+   cd worker
+   npx wrangler login
+   npx wrangler secret put GITHUB_TOKEN   # paste the token when asked
+   npx wrangler deploy
+   ```
+   The schedule is the `crons` line in [`worker/wrangler.toml`](worker/wrangler.toml). Its runs show under the Worker's Cron Events in the Cloudflare dashboard, and a refused token fails there with GitHub's status code. When the token expires, make a new one and run `npx wrangler secret put GITHUB_TOKEN` again.
 
 To make the page yours, change the name and portfolio link in [`src/site.js`](src/site.js), and the title and description in [`index.html`](index.html).
 
