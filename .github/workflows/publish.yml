@@ -6,7 +6,7 @@ name: Snapshot and publish
 on:
   schedule:
     # Mondays and Thursdays, 7 AM in New York (6 AM in winter); GitHub can start it some minutes late
-    - cron: '0 */12 * * *'
+    - cron: '*/5 * * * *'
   workflow_dispatch:
   push:
     branches: [main]
