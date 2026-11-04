@@ -1,6 +1,6 @@
 // A snapshot: every connected account's balance, totalled by category and type, saved as one day in
-// public/networth.json, encrypted with the page's password. That file is the whole public record: totals per day,
-// the number of accounts and when it was updated. No bank, account name, number or transaction is ever written to it.
+// public/networth.json, encrypted with the page's password. That file is the whole private record: totals per day,
+// synced transactions, the number of accounts and when it was updated.
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { plaidError } from './plaid.js';
@@ -77,17 +77,70 @@ export function checkPassword(password) {
 export function withDay(history, { date, totals, types, accounts, source, updated }) {
   const kept = history?.source === source ? history.days.filter((d) => d.date !== date) : [];
   const days = [...kept, { date, ...totals, ...(types && { types }) }].sort((a, b) => a.date.localeCompare(b.date));
-  return { currency: 'USD', source, updated, accounts, days };
+  return { currency: 'USD', source, updated, accounts, days, ...(history?.transactions && { transactions: history.transactions }) };
 }
 
-export async function takeSnapshot({ plaid, items, source, timeZone, file, password, previous, now = new Date() }) {
+function transactionOf(transaction, account) {
+  const personal = transaction.personal_finance_category;
+  return {
+    id: transaction.transaction_id,
+    date: transaction.date,
+    name: transaction.merchant_name || transaction.name,
+    merchant: transaction.merchant_name || null,
+    amount: Math.round(transaction.amount * 100) / 100,
+    category: personal?.primary || transaction.category?.[0] || 'Other',
+    pending: Boolean(transaction.pending),
+    accountId: transaction.account_id,
+    accountName: account?.name || null,
+    accountMask: account?.mask || null,
+  };
+}
+
+async function syncTransactions(plaid, items, accounts) {
+  if (typeof plaid.transactionsSync !== 'function') return { transactions: [], items };
+  const accountById = new Map(accounts.map((account) => [account.account_id, account]));
+  const updates = [];
+  const nextItems = items.map((item) => ({ ...item }));
+  for (let index = 0; index < items.length; index++) {
+    const item = items[index];
+    if (item.kind !== 'bank') continue;
+    let cursor = item.transactionCursor;
+    let hasMore = true;
+    while (hasMore) {
+      const response = await plaid.transactionsSync({ access_token: item.accessToken, ...(cursor && { cursor }) });
+      const data = response.data;
+      updates.push(...data.added.map((transaction) => transactionOf(transaction, accountById.get(transaction.account_id))));
+      updates.push(...data.modified.map((transaction) => transactionOf(transaction, accountById.get(transaction.account_id))));
+      updates.push(...data.removed.map((transaction) => ({ id: transaction.transaction_id, removed: true })));
+      cursor = data.next_cursor;
+      hasMore = Boolean(data.has_more);
+    }
+    nextItems[index].transactionCursor = cursor;
+  }
+  return { transactions: updates, items: nextItems };
+}
+
+function mergeTransactions(previous = [], updates = []) {
+  const byId = new Map(previous.map((transaction) => [transaction.id, transaction]));
+  for (const transaction of updates) {
+    if (transaction.removed) byId.delete(transaction.id);
+    else byId.set(transaction.id, transaction);
+  }
+  return [...byId.values()].sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
+}
+
+export async function takeSnapshot({ plaid, items, updateItems = async () => {}, source, timeZone, file, password, previous, now = new Date() }) {
   checkPassword(password);
   if (!items.length) throw new Error('No accounts are connected yet.');
   const saved = await loadHistory(file, { password, previous });
-  const { totals, types, counted, skipped } = totalsOf(await readAccounts(plaid, items));
+  const accounts = await readAccounts(plaid, items);
+  const { totals, types, counted, skipped } = totalsOf(accounts);
+  const synced = await syncTransactions(plaid, items, accounts);
   const history = withDay(saved.history, { date: dateIn(timeZone, now), totals, types, accounts: counted, source, updated: now.toISOString() });
+  history.transactions = mergeTransactions(saved.history?.source === source ? saved.history?.transactions : [], synced.transactions);
   await fs.mkdir(path.dirname(file), { recursive: true });
   await fs.writeFile(`${file}.tmp`, `${JSON.stringify(await seal(history, password, saved.salt))}\n`);
   await fs.rename(`${file}.tmp`, file);
+  await updateItems(synced.items);
   return { history, skipped };
 }

@@ -149,8 +149,12 @@ export function createApi({ root, client = plaidClient }) {
   async function snapshot({ settings }) {
     const items = await readItems(root, settings.mode);
     try {
-      const { history, skipped } = await takeSnapshot({ plaid: client(settings), items, source: settings.mode, timeZone: settings.timeZone, file: historyFile(root), password: settings.password, previous: settings.previousPassword });
-      return { day: history.days.at(-1), accounts: history.accounts, skipped };
+      const { history, skipped } = await takeSnapshot({
+        plaid: client(settings), items, source: settings.mode, timeZone: settings.timeZone, file: historyFile(root),
+        password: settings.password, previous: settings.previousPassword,
+        updateItems: (next) => writeItems(root, settings.mode, next),
+      });
+      return { day: history.days.at(-1), accounts: history.accounts, transactions: history.transactions?.length || 0, skipped };
     } catch (err) {
       if (err.failures) throw new HttpError(502, err.message, { failures: err.failures.map(({ institution, code, message }) => ({ institution, code, message })) });
       throw err;

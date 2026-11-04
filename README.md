@@ -7,12 +7,13 @@ Himesh Ahuja's net worth as a password-protected dashboard: read from real bank,
 The dashboard has these parts:
 
 - **Figures:** net worth, assets and liabilities, each with its change over the chosen range (1M to All). They double as tabs that switch the chart.
-- **Over time:** the chart notes each round number the figure first passes ("Passed $30,000").
+- **Over time:** the chart notes each round number the figure first passes ("Passed $30,000"). Hover or focus any point to inspect its date and value.
 - **Ratios:** debt to assets, cash and invested shares, and liquid net worth.
 - **Balance sheet:** every category and account type (checking, savings, 401(k), student loans…) with its balance, share and change.
 - **Changes:** net worth over 1 day, 7 days, month to date, 3 months, year to date, 1 year and all time.
 - **Records:** the high, the low, the best and worst months.
 - **Month by month:** a chart of each month's change and a table of month-end closes.
+- **Transactions:** every transaction returned by Plaid's transaction sync, searchable in the dashboard.
 
 Until the first snapshot it shows seeded sample figures, labelled as such; sandbox figures are labelled too. Add `?sample` to the address to see the sample whatever has been published.
 
@@ -27,7 +28,7 @@ The whole record is one file, `public/networth.json`, written by the first snaps
 - the same totals split by account type (Plaid's own subtype, such as checking or 401(k));
 - the number of accounts and when the file was updated.
 
-It never contains a bank name, an account name or number, or a transaction. Two accounts of the same type are published as one total. A test checks this.
+Transactions are stored in the same encrypted file, with their description, date, category, amount, pending state and the connected account's name and mask. Two accounts of the same type are still published as one balance total. Without the password, neither the balances nor the transactions can be read.
 
 Once you've [set it up](#running-your-own), it also holds the GitHub token the page uses to ask for a new snapshot, sealed with the rest. The token is limited to this repository's Actions, so the most it can do is start, cancel or delete workflow runs.
 

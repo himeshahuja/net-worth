@@ -1,6 +1,7 @@
 import { daysBetween } from '../lib/networth.js';
 import { measure, placeNotes, ticks, timeTicks } from './scale.js';
 import { useWidth } from './useWidth.js';
+import { useState } from 'react';
 
 const ROW = 14;
 
@@ -10,6 +11,7 @@ const ROW = 14;
 //   tickFormat: the axis   describe: for screen readers
 export default function LineChart({ points, notes = [], height = 240, tickFormat, describe }) {
   const [ref, width] = useWidth();
+  const [selected, setSelected] = useState(null);
 
   let chart = null;
   if (width) {
@@ -27,6 +29,9 @@ export default function LineChart({ points, notes = [], height = 240, tickFormat
     const padT = lane.rows ? 8 + lane.rows * ROW + 4 : 8;
     const y = (v) => padT + (height - padT - padB) * (1 - (v - yt[0]) / (yt.at(-1) - yt[0]));
     const path = points.map((p, i) => `${i ? 'L' : 'M'}${x(p.date).toFixed(1)} ${y(p.value).toFixed(1)}`).join('');
+    const active = selected == null ? null : points[selected];
+    const activeX = active && x(active.date);
+    const activeY = active && y(active.value);
 
     // x labels: the first pulled inside the plot, none past the right edge
     const xt = timeTicks(first, last, width - padL).map((t) => {
@@ -56,6 +61,31 @@ export default function LineChart({ points, notes = [], height = 240, tickFormat
           })}
         </g>
         <path className="chart-line" d={path} />
+        <g className="chart-points">
+          {points.map((p, i) => (
+            <circle
+              key={p.date}
+              cx={x(p.date)}
+              cy={y(p.value)}
+              r={selected === i ? 5 : 10}
+              className={selected === i ? 'chart-point active' : 'chart-point-hit'}
+              tabIndex="0"
+              role="button"
+              aria-label={`${p.date}: ${tickFormat(p.value)}`}
+              onMouseEnter={() => setSelected(i)}
+              onFocus={() => setSelected(i)}
+              onMouseLeave={() => setSelected(null)}
+              onBlur={() => setSelected(null)}
+            />
+          ))}
+          {active && (
+            <g className="chart-tooltip" pointerEvents="none">
+              <line x1={activeX} x2={activeX} y1={padT} y2={height - padB} />
+              <rect x={Math.max(padL, Math.min(width - 132, activeX - 66))} y={Math.max(2, activeY - 38)} width="132" height="32" rx="4" />
+              <text x={Math.max(padL + 8, Math.min(width - 124, activeX - 58))} y={Math.max(15, activeY - 18)}>{active.date} · {tickFormat(active.value)}</text>
+            </g>
+          )}
+        </g>
       </svg>
     );
   }

@@ -1,7 +1,7 @@
 // Connected banks and their Plaid access tokens. They stay on this computer, in data/ (gitignored), readable
 // by this user only. One file per Plaid environment, because sandbox tokens do not work in production.
 //
-// An item: { id, accessToken, institution, institutionId, kind: 'bank' | 'investment' | 'loan', added, linkSessionId }
+// An item: { id, accessToken, institution, institutionId, kind: 'bank' | 'investment' | 'loan', added, linkSessionId, transactionCursor }
 import fs from 'node:fs/promises';
 import path from 'node:path';
 

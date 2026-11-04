@@ -404,6 +404,50 @@ function Months({ days }) {
   );
 }
 
+function Transactions({ transactions = [] }) {
+  const [query, setQuery] = useState('');
+  const [all, setAll] = useState(false);
+  const filtered = transactions.filter((transaction) => {
+    const text = `${transaction.name} ${transaction.merchant || ''} ${transaction.category} ${transaction.accountName || ''}`.toLowerCase();
+    return text.includes(query.toLowerCase().trim());
+  });
+  const shown = all ? filtered : filtered.slice(0, 25);
+  return (
+    <section className="panel transactions" aria-labelledby="transactions-title">
+      <header>
+        <h2 id="transactions-title">Transactions</h2>
+        <span className="meta">{transactions.length} recorded</span>
+      </header>
+      {transactions.length === 0 ? <p className="empty">Transactions will appear after the next bank snapshot.</p> : (
+        <>
+          <label className="transaction-search">
+            <span className="sr-only">Search transactions</span>
+            <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search transactions" />
+          </label>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr><th scope="col">Date</th><th scope="col">Description</th><th scope="col">Category</th><th scope="col" className="n">Amount</th></tr>
+              </thead>
+              <tbody>
+                {shown.map((transaction) => (
+                  <tr key={transaction.id}>
+                    <th scope="row">{shortDate(transaction.date)}</th>
+                    <td>{transaction.name}{transaction.pending && <span className="muted"> · pending</span>}<span className="phone">{transaction.accountName || 'Account'}</span></td>
+                    <td className="muted">{transaction.category}</td>
+                    <td className={`n num ${transaction.amount > 0 ? 'bad' : 'good'}`}>{signed(-transaction.amount)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {filtered.length > 25 && <button type="button" className="text-btn more" onClick={() => setAll(!all)}>{all ? 'Show the first 25 transactions' : `Show all ${filtered.length} transactions`}</button>}
+        </>
+      )}
+    </section>
+  );
+}
+
 function Loading() {
   return (
     <div className="grid" aria-busy="true">
@@ -437,6 +481,7 @@ function Dashboard({ history }) {
           <Records days={days} />
         </div>
         <Months days={days} />
+        <Transactions transactions={history.transactions} />
       </div>
     </>
   );

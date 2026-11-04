@@ -5,7 +5,7 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { categoryOf, balanceOf, totalsOf } from './accounts.js';
-import { checkPassword, dateIn, loadHistory, readAccounts, withDay } from './snapshot.js';
+import { checkPassword, dateIn, loadHistory, readAccounts, takeSnapshot, withDay } from './snapshot.js';
 import { createApi } from './api.js';
 import { isSealed, open, seal } from '../src/lib/vault.js';
 
@@ -91,6 +91,36 @@ test('the figures open only with the password, and a password change carries the
     await assert.rejects(loadHistory(file, { password: 'a brand new phrase' }), /does not open/);
     assert.throws(() => checkPassword('short'), /12 characters/);
     assert.throws(() => checkPassword(null), /NETWORTH_PASSWORD/);
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('a snapshot syncs transactions and advances the private cursor', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'net-worth-transactions-'));
+  const item = { id: 'item-1', accessToken: 'token', kind: 'bank', institution: 'Bank' };
+  let request;
+  const plaid = {
+    accountsGet: async () => ({ data: { accounts: [account('depository', 'checking', 100, { account_id: 'account-1' })] } }),
+    transactionsSync: async (body) => {
+      request = body;
+      return {
+        data: {
+          added: [{ transaction_id: 'transaction-1', account_id: 'account-1', date: '2026-11-04', name: 'Coffee', amount: 4.25, category: ['Food and Drink'], pending: false }],
+          modified: [], removed: [], next_cursor: 'cursor-1', has_more: false,
+        },
+      };
+    },
+  };
+  try {
+    const updated = [];
+    const result = await takeSnapshot({
+      plaid, items: [item], source: 'sandbox', timeZone: 'America/New_York', file: path.join(dir, 'public', 'networth.json'),
+      password: PASSWORD, now: new Date('2026-11-04T12:00:00Z'), updateItems: async (items) => updated.push(items),
+    });
+    assert.equal(result.history.transactions[0].name, 'Coffee');
+    assert.deepEqual(request, { access_token: 'token' });
+    assert.equal(updated[0][0].transactionCursor, 'cursor-1');
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }

@@ -137,6 +137,11 @@ h2 { font-size: 16px; line-height: 24px; font-weight: 500; }
 .chart-note line { stroke: #d6d6d6; stroke-width: 1; }
 .chart-note text { fill: var(--muted); font-size: 11px; }
 .chart-line { fill: none; stroke: var(--hue); stroke-width: 2; stroke-linejoin: round; }
+.chart-point-hit { fill: transparent; stroke: transparent; cursor: crosshair; }
+.chart-point.active { fill: var(--surface); stroke: var(--hue); stroke-width: 2; }
+.chart-tooltip line { stroke: var(--hue); stroke-width: 1; stroke-dasharray: 3 3; }
+.chart-tooltip rect { fill: var(--text); }
+.chart-tooltip text { fill: var(--surface); font-size: 11px; }
 .chart-col { fill: var(--text); }
 .chart-col.partial { fill: var(--grey-mark); }
 
@@ -173,6 +178,12 @@ td.num { font-size: 13px; }
 .sheet-total .money { font-size: 15px; font-weight: 700; }
 
 .months .chart { margin-bottom: 8px; }
+.transactions { grid-column: 1 / -1; }
+.transaction-search { display: block; margin-bottom: 8px; }
+.transaction-search input {
+  width: 100%; height: 36px; padding: 0 10px; border: 1px solid var(--control);
+  border-radius: var(--radius-control); background: var(--surface); font: inherit;
+}
 .text-btn { padding: 0; border: 0; background: none; color: var(--muted); text-decoration: underline; text-underline-offset: 3px; }
 .text-btn:hover { color: var(--text); }
 .more { margin-top: 14px; }
