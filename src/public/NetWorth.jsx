@@ -80,8 +80,16 @@ async function keyFromGoogle(credential) {
   return body.key;
 }
 
+// The address a Google ID token names, read only to show who was turned away. The Worker is what checks it.
+function emailOf(credential) {
+  try {
+    return JSON.parse(atob(credential.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).email ?? null;
+  } catch {
+    return null;
+  }
+}
+
 const GOOGLE_ERRORS = {
-  'not-allowed': 'That Google account can’t see these figures.',
   stale: 'Signed in, but the server’s key doesn’t open these figures.',
   failed: 'Sign-in didn’t go through. Try again.',
   unavailable: 'Google sign-in couldn’t load. Check the connection and reload.',
@@ -114,6 +122,7 @@ function GoogleSignIn({ onKey, onUnavailable }) {
 function Lock({ file, onOpen }) {
   const [onDevice, setOnDevice] = useState(false);
   const [error, setError] = useState(null);
+  const [denied, setDenied] = useState(null);
   const unavailable = useCallback(() => setError('unavailable'), []);
   const withGoogle = useCallback(
     async (credential) => {
@@ -122,7 +131,8 @@ function Lock({ file, onOpen }) {
       try {
         key = await keyFromGoogle(credential);
       } catch (err) {
-        return setError(err.message === 'not-allowed' ? 'not-allowed' : 'failed');
+        if (err.message === 'not-allowed') return setDenied(emailOf(credential) ?? 'That Google account');
+        return setError('failed');
       }
       try {
         const opened = await open(file, { key });
@@ -134,6 +144,17 @@ function Lock({ file, onOpen }) {
     },
     [file, onDevice, onOpen],
   );
+  if (denied) {
+    return (
+      <section className="panel lock denied" aria-labelledby="lock-title" role="alert">
+        <h1 id="lock-title">Access denied</h1>
+        <p className="denied-note">
+          <strong>{denied}</strong> isn’t allowed to see this page. These figures are private to {site.owner}.
+        </p>
+        <button type="button" className="btn wide-btn" onClick={() => setDenied(null)}>Use a different Google account</button>
+      </section>
+    );
+  }
   return (
     <section className="panel lock" aria-labelledby="lock-title">
       <h1 id="lock-title">Net worth</h1>

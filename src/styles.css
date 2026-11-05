@@ -286,6 +286,12 @@ h3 { font-size: 14px; line-height: 20px; font-weight: 500; }
 /* Google draws its own button in here; the slot keeps its height while the script loads. */
 .google-slot { min-height: 44px; }
 .lock-google .error-line { min-height: 20px; margin: 6px 0 0; }
+/* A sign-in by an address that isn't allowed: the whole panel says so. */
+.lock.denied { background: var(--pill-negative-bg); border-color: var(--negative); border-width: 2px; }
+.lock.denied h1 { color: var(--negative); }
+.denied-note { margin-top: 12px; font-size: 15px; line-height: 22px; color: var(--pill-negative-ink); overflow-wrap: anywhere; }
+.denied-note strong { font-weight: 600; }
+.lock.denied .wide-btn { margin-top: 24px; }
 .lock label { display: block; font-weight: 500; }
 .lock .check { display: flex; align-items: center; gap: 8px; font-weight: 400; color: var(--muted); }
 .lock .check input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
