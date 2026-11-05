@@ -283,6 +283,10 @@ h3 { font-size: 14px; line-height: 20px; font-weight: 500; }
 /* The password screen: one panel on the page's left edge, the figures behind it */
 .lock { max-width: 420px; margin-top: 16px; padding: 28px var(--pad); }
 .lock form { margin-top: 24px; }
+.lock-google { margin-top: 24px; }
+/* Google draws its own button in here; the slot keeps its height while the script loads. */
+.google-slot { min-height: 44px; }
+.lock-google .error-line { min-height: 20px; margin: 6px 0 0; }
 .lock label { display: block; font-weight: 500; }
 .lock input[type='password'] {
   display: block; width: 100%; height: 40px; margin-top: 8px; padding: 0 12px;

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Bar from '../Bar.jsx';
 import LineChart from '../charts/LineChart.jsx';
 import ColumnChart from '../charts/ColumnChart.jsx';
@@ -58,10 +58,59 @@ function forget() {
   }
 }
 
+// Google's sign-in script, loaded once and only on the lock screen.
+let gis;
+function loadGoogle() {
+  gis ??= new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = 'https://accounts.google.com/gsi/client';
+    script.async = true;
+    script.onload = () => (window.google?.accounts?.id ? resolve(window.google.accounts.id) : reject(new Error('no google')));
+    script.onerror = reject;
+    document.head.append(script);
+  });
+  return gis;
+}
+
+// Trades Google's ID token for the key at the Worker, which checks the token and the address.
+async function keyFromGoogle(credential) {
+  const res = await fetch(site.google.unlock, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ credential }) });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok || !body.key) throw new Error(body.error ?? 'unlock');
+  return body.key;
+}
+
+const GOOGLE_ERRORS = {
+  'not-allowed': 'That Google account can’t see these figures.',
+  stale: 'Signed in, but the key has changed. Use the password.',
+  failed: 'Google sign-in didn’t go through. Try again, or use the password.',
+};
+
+function GoogleSignIn({ onKey }) {
+  const slot = useRef(null);
+  const [ready, setReady] = useState(true);
+  useEffect(() => {
+    let live = true;
+    loadGoogle()
+      .then((id) => {
+        if (!live || !slot.current) return;
+        id.initialize({ client_id: site.google.clientId, callback: ({ credential }) => onKey(credential), ux_mode: 'popup', auto_select: false });
+        id.renderButton(slot.current, { theme: 'outline', size: 'large', shape: 'rectangular', text: 'signin_with', width: slot.current.clientWidth });
+      })
+      .catch(() => live && setReady(false));
+    return () => {
+      live = false;
+    };
+  }, [onKey]);
+  if (!ready) return null;
+  return <div ref={slot} className="google-slot" />;
+}
+
 function Lock({ file, onOpen }) {
   const [password, setPassword] = useState('');
   const [onDevice, setOnDevice] = useState(false);
   const [state, setState] = useState(null);
+  const [googleError, setGoogleError] = useState(null);
   const submit = async (event) => {
     event.preventDefault();
     setState('opening');
@@ -73,12 +122,38 @@ function Lock({ file, onOpen }) {
       setState('wrong');
     }
   };
+  const withGoogle = useCallback(
+    async (credential) => {
+      setGoogleError(null);
+      let key;
+      try {
+        key = await keyFromGoogle(credential);
+      } catch (err) {
+        return setGoogleError(err.message === 'not-allowed' ? 'not-allowed' : 'failed');
+      }
+      try {
+        const opened = await open(file, { key });
+        remember(file, opened.key, onDevice);
+        onOpen(opened.history);
+      } catch {
+        setGoogleError('stale');
+      }
+    },
+    [file, onDevice, onOpen],
+  );
+  const google = site.google?.clientId && site.google?.unlock;
   return (
     <section className="panel lock" aria-labelledby="lock-title">
       <h1 id="lock-title">Net worth</h1>
+      {google && (
+        <div className="lock-google">
+          <GoogleSignIn onKey={withGoogle} />
+          <p className="error-line" role="alert">{googleError ? GOOGLE_ERRORS[googleError] : ''}</p>
+        </div>
+      )}
       <form onSubmit={submit}>
-        <label htmlFor="password">Password</label>
-        <input id="password" type="password" autoComplete="current-password" autoFocus value={password} onChange={(e) => { setPassword(e.target.value); setState(null); }} aria-invalid={state === 'wrong'} aria-describedby="lock-error" />
+        <label htmlFor="password">{google ? 'Or the password' : 'Password'}</label>
+        <input id="password" type="password" autoComplete="current-password" autoFocus={!google} value={password} onChange={(e) => { setPassword(e.target.value); setState(null); }} aria-invalid={state === 'wrong'} aria-describedby="lock-error" />
         <p id="lock-error" className="error-line" role="alert">{state === 'wrong' ? 'That password doesn’t open them.' : ''}</p>
         <label className="check">
           <input type="checkbox" checked={onDevice} onChange={(e) => setOnDevice(e.target.checked)} /> Remember on this device

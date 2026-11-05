@@ -23,6 +23,8 @@ The whole record is one file, `public/networth.json`, written by the first snaps
 
 **It's encrypted.** Each snapshot seals the file with the page's password (`NETWORTH_PASSWORD`). The encryption is AES-256-GCM, with the key derived from the password by PBKDF2 (SHA-256, 600,000 rounds) ([`src/lib/vault.js`](src/lib/vault.js)). The page asks for the password and decrypts the file in the browser, so anyone without it, the commits and the open URL included, sees only noise. *Remember on this device* keeps the derived key, never the password. It stays valid until the password changes. Nothing is protected beyond that one password, so make it long, and share it only with people who may see the figures.
 
+**Or sign in with Google.** The page also offers *Sign in with Google*. Google signs you in, with your account's 2-Step Verification, and hands the page an ID token. The page sends it to the Cloudflare Worker in [`worker/`](worker/), which checks Google's signature, that the token was issued for this page's OAuth client and hasn't expired, and that its verified address is in `ALLOWED_EMAILS`. Only then does it return `VAULT_KEY`, the same derived key *Remember on this device* keeps, and the page opens the file with it. The Worker answers only the page's origin, only at `POST /unlock`, and never caches the reply ([`worker/index.js`](worker/index.js), tested in [`worker/unlock.test.js`](worker/unlock.test.js)). So the figures are as safe as the password and as every allowed Google account.
+
 **Inside**, it holds one line per day:
 - totals per category, in whole dollars;
 - the same totals split by account type (Plaid's own subtype, such as checking or 401(k));
@@ -82,6 +84,14 @@ You need Node 22 or later, a free [Plaid account](https://dashboard.plaid.com/si
    npx wrangler deploy
    ```
    The schedule is the `crons` line in [`worker/wrangler.toml`](worker/wrangler.toml). Its runs show under the Worker's Cron Events in the Cloudflare dashboard, and a refused token fails there with GitHub's status code. When the token expires, make a new one and run `npx wrangler secret put GITHUB_TOKEN` again.
+
+7. **Sign in with Google (optional).** In Google Cloud Console, create an OAuth client ID of type *Web application* with your page's origin (`https://<you>.github.io`) as an authorized JavaScript origin, and put it in `GOOGLE_CLIENT_ID` in [`worker/wrangler.toml`](worker/wrangler.toml) and `google.clientId` in [`src/site.js`](src/site.js). Then, from `worker/`, store who may sign in and the key, which is derived from your password and piped straight in so it never shows:
+   ```sh
+   npx wrangler secret put ALLOWED_EMAILS   # comma-separated addresses
+   node --env-file=../.env -e "import('../src/lib/vault.js').then(async ({ open }) => { const file = await (await fetch('https://<you>.github.io/net-worth/networth.json')).json(); process.stdout.write((await open(file, { password: process.env.NETWORTH_PASSWORD })).key) })" | npx wrangler secret put VAULT_KEY
+   npx wrangler deploy
+   ```
+   Put the Worker's address, with `/unlock`, in `google.unlock` in `src/site.js`. **When you change the password**, run the `VAULT_KEY` line again after the new file is published, or Google sign-in opens nothing.
 
 To make the page yours, change the name and portfolio link in [`src/site.js`](src/site.js), and the title and description in [`index.html`](index.html).
 

@@ -1,10 +1,12 @@
-# Starts the snapshot workflow on a schedule. Deploy with `npx wrangler deploy` from this folder, after
-# `npx wrangler secret put GITHUB_TOKEN` (see the README).
+# Starts the snapshot workflow on a schedule, and hands the page its key after a Google sign-in. Deploy with
+# `npx wrangler deploy` from this folder, after the secrets in the README (GITHUB_TOKEN, VAULT_KEY, ALLOWED_EMAILS).
 name = "net-worth-snapshot"
 main = "index.js"
 compatibility_date = "2026-10-01"
-# Nothing to serve: the Worker only runs on its schedule.
-workers_dev = false
+# Serves POST /unlock on its workers.dev address; nothing else answers.
+workers_dev = true
+# No separate public address for each uploaded version.
+preview_urls = false
 
 [triggers]
 # Every hour, on the hour (UTC).
@@ -14,3 +16,7 @@ crons = ["0 * * * *"]
 REPO = "himeshahuja/net-worth"
 WORKFLOW = "publish.yml"
 REF = "main"
+# The page's OAuth client (public by design: Google shows it to every visitor).
+GOOGLE_CLIENT_ID = "117373050143-4rn3jok7atmsggeubsd1ncld1nfaqv60.apps.googleusercontent.com"
+# Pages allowed to ask, comma-separated.
+ALLOWED_ORIGINS = "https://himeshahuja.github.io"
