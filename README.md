@@ -1,8 +1,8 @@
 # Net worth
 
-Himesh Ahuja's net worth as a password-protected dashboard: read from real bank, brokerage and loan accounts through [Plaid](https://plaid.com), saved on every push, twice a week and when you open the page, and published, encrypted, as a static site.
+Himesh Ahuja's net worth as a private dashboard, opened with Google sign-in: read from real bank, brokerage and loan accounts through [Plaid](https://plaid.com), saved on every push, twice a week and when you open the page, and published, encrypted, as a static site.
 
-**Live:** https://himeshahuja.github.io/net-worth/ (password protected; [`?sample`](https://himeshahuja.github.io/net-worth/?sample) shows it with sample figures)
+**Live:** https://himeshahuja.github.io/net-worth/ (Google sign-in; [`?sample`](https://himeshahuja.github.io/net-worth/?sample) shows it with sample figures)
 
 The dashboard has these parts:
 
@@ -21,9 +21,9 @@ Until the first snapshot it shows seeded sample figures, labelled as such; sandb
 
 The whole record is one file, `public/networth.json`, written by the first snapshot.
 
-**It's encrypted.** Each snapshot seals the file with the page's password (`NETWORTH_PASSWORD`). The encryption is AES-256-GCM, with the key derived from the password by PBKDF2 (SHA-256, 600,000 rounds) ([`src/lib/vault.js`](src/lib/vault.js)). The page asks for the password and decrypts the file in the browser, so anyone without it, the commits and the open URL included, sees only noise. *Remember on this device* keeps the derived key, never the password. It stays valid until the password changes. Nothing is protected beyond that one password, so make it long, and share it only with people who may see the figures.
+**It's encrypted.** Each snapshot seals the file with a password (`NETWORTH_PASSWORD`) that lives only in `.env` and the Action's secrets. The page never asks for it. The encryption is AES-256-GCM, with the key derived from the password by PBKDF2 (SHA-256, 600,000 rounds) ([`src/lib/vault.js`](src/lib/vault.js)), and the page decrypts the file in the browser, so anyone without the key, the commits and the open URL included, sees only noise. *Remember on this device* keeps the key, never the password. It stays valid until the password changes. Make the password long: it is still what the key comes from.
 
-**Or sign in with Google.** The page also offers *Sign in with Google*. Google signs you in, with your account's 2-Step Verification, and hands the page an ID token. The page sends it to the Cloudflare Worker in [`worker/`](worker/), which checks Google's signature, that the token was issued for this page's OAuth client and hasn't expired, and that its verified address is in `ALLOWED_EMAILS`. Only then does it return `VAULT_KEY`, the same derived key *Remember on this device* keeps, and the page opens the file with it. The Worker answers only the page's origin, only at `POST /unlock`, and never caches the reply ([`worker/index.js`](worker/index.js), tested in [`worker/unlock.test.js`](worker/unlock.test.js)). So the figures are as safe as the password and as every allowed Google account.
+**Sign in with Google is the only way in.** Google signs you in, with your account's 2-Step Verification, and hands the page an ID token. The page sends it to the Cloudflare Worker in [`worker/`](worker/), which checks Google's signature, that the token was issued for this page's OAuth client and hasn't expired, and that its verified address is in `ALLOWED_EMAILS`. Only then does it return `VAULT_KEY`, the same derived key *Remember on this device* keeps, and the page opens the file with it. The Worker answers only the page's origin, only at `POST /unlock`, and never caches the reply ([`worker/index.js`](worker/index.js), tested in [`worker/unlock.test.js`](worker/unlock.test.js)). So the figures are as safe as the password and as every allowed Google account, so keep 2-Step Verification on for each.
 
 **Inside**, it holds one line per day:
 - totals per category, in whole dollars;
@@ -85,13 +85,13 @@ You need Node 22 or later, a free [Plaid account](https://dashboard.plaid.com/si
    ```
    The schedule is the `crons` line in [`worker/wrangler.toml`](worker/wrangler.toml). Its runs show under the Worker's Cron Events in the Cloudflare dashboard, and a refused token fails there with GitHub's status code. When the token expires, make a new one and run `npx wrangler secret put GITHUB_TOKEN` again.
 
-7. **Sign in with Google (optional).** In Google Cloud Console, create an OAuth client ID of type *Web application* with your page's origin (`https://<you>.github.io`) as an authorized JavaScript origin, and put it in `GOOGLE_CLIENT_ID` in [`worker/wrangler.toml`](worker/wrangler.toml) and `google.clientId` in [`src/site.js`](src/site.js). Then, from `worker/`, store who may sign in and the key, which is derived from your password and piped straight in so it never shows:
+7. **Sign in with Google.** The page has no other way in, so set this up before publishing a sealed file. In Google Cloud Console, create an OAuth client ID of type *Web application* with your page's origin (`https://<you>.github.io`) as an authorized JavaScript origin, and put it in `GOOGLE_CLIENT_ID` in [`worker/wrangler.toml`](worker/wrangler.toml) and `google.clientId` in [`src/site.js`](src/site.js). Then store who may sign in, and the key, which [`scripts/vault-key.js`](scripts/vault-key.js) derives from your password and pipes straight in so it never shows (it prints nothing unless the key opens `public/networth.json`):
    ```sh
-   npx wrangler secret put ALLOWED_EMAILS   # comma-separated addresses
-   node --env-file=../.env -e "import('../src/lib/vault.js').then(async ({ open }) => { const file = await (await fetch('https://<you>.github.io/net-worth/networth.json')).json(); process.stdout.write((await open(file, { password: process.env.NETWORTH_PASSWORD })).key) })" | npx wrangler secret put VAULT_KEY
-   npx wrangler deploy
+   (cd worker && npx wrangler secret put ALLOWED_EMAILS)   # comma-separated addresses
+   node --env-file=.env scripts/vault-key.js | (cd worker && npx wrangler secret put VAULT_KEY)
+   (cd worker && npx wrangler deploy)
    ```
-   Put the Worker's address, with `/unlock`, in `google.unlock` in `src/site.js`. **When you change the password**, run the `VAULT_KEY` line again after the new file is published, or Google sign-in opens nothing.
+   Put the Worker's address, with `/unlock`, in `google.unlock` in `src/site.js`. **When you change the password**, `git pull` once the new file is published and run the `VAULT_KEY` line again, or sign-in says the server's key doesn't open the figures.
 
 To make the page yours, change the name and portfolio link in [`src/site.js`](src/site.js), and the title and description in [`index.html`](index.html).
 

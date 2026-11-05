@@ -11,7 +11,7 @@ import { site } from '../site.js';
 const DATA = `${import.meta.env.BASE_URL}networth.json`;
 
 // The published history; the sample until there is one, or when the address ends in ?sample.
-// The published file is sealed with the page's password; one saved before that is plain.
+// The published file is sealed (see vault.js); one saved before that is plain.
 async function loadHistory() {
   if (new URLSearchParams(location.search).has('sample')) return { history: sampleHistory() };
   try {
@@ -82,84 +82,68 @@ async function keyFromGoogle(credential) {
 
 const GOOGLE_ERRORS = {
   'not-allowed': 'That Google account can’t see these figures.',
-  stale: 'Signed in, but the key has changed. Use the password.',
-  failed: 'Google sign-in didn’t go through. Try again, or use the password.',
+  stale: 'Signed in, but the server’s key doesn’t open these figures.',
+  failed: 'Sign-in didn’t go through. Try again.',
+  unavailable: 'Google sign-in couldn’t load. Check the connection and reload.',
 };
 
-function GoogleSignIn({ onKey }) {
+// Google draws its own button in the slot. The callback is read through a ref, so Google is set up once.
+function GoogleSignIn({ onKey, onUnavailable }) {
   const slot = useRef(null);
-  const [ready, setReady] = useState(true);
+  const latest = useRef(onKey);
+  useEffect(() => {
+    latest.current = onKey;
+  }, [onKey]);
   useEffect(() => {
     let live = true;
     loadGoogle()
       .then((id) => {
         if (!live || !slot.current) return;
-        id.initialize({ client_id: site.google.clientId, callback: ({ credential }) => onKey(credential), ux_mode: 'popup', auto_select: false });
+        id.initialize({ client_id: site.google.clientId, callback: ({ credential }) => latest.current(credential), ux_mode: 'popup', auto_select: false });
         id.renderButton(slot.current, { theme: 'outline', size: 'large', shape: 'rectangular', text: 'signin_with', width: slot.current.clientWidth });
       })
-      .catch(() => live && setReady(false));
+      .catch(() => live && onUnavailable());
     return () => {
       live = false;
     };
-  }, [onKey]);
-  if (!ready) return null;
+  }, [onUnavailable]);
   return <div ref={slot} className="google-slot" />;
 }
 
+// The only way in: Google sign-in, which the Worker trades for the key (see worker/).
 function Lock({ file, onOpen }) {
-  const [password, setPassword] = useState('');
   const [onDevice, setOnDevice] = useState(false);
-  const [state, setState] = useState(null);
-  const [googleError, setGoogleError] = useState(null);
-  const submit = async (event) => {
-    event.preventDefault();
-    setState('opening');
-    try {
-      const { history, key } = await open(file, { password });
-      remember(file, key, onDevice);
-      onOpen(history);
-    } catch {
-      setState('wrong');
-    }
-  };
+  const [error, setError] = useState(null);
+  const unavailable = useCallback(() => setError('unavailable'), []);
   const withGoogle = useCallback(
     async (credential) => {
-      setGoogleError(null);
+      setError(null);
       let key;
       try {
         key = await keyFromGoogle(credential);
       } catch (err) {
-        return setGoogleError(err.message === 'not-allowed' ? 'not-allowed' : 'failed');
+        return setError(err.message === 'not-allowed' ? 'not-allowed' : 'failed');
       }
       try {
         const opened = await open(file, { key });
         remember(file, opened.key, onDevice);
         onOpen(opened.history);
       } catch {
-        setGoogleError('stale');
+        setError('stale');
       }
     },
     [file, onDevice, onOpen],
   );
-  const google = site.google?.clientId && site.google?.unlock;
   return (
     <section className="panel lock" aria-labelledby="lock-title">
       <h1 id="lock-title">Net worth</h1>
-      {google && (
-        <div className="lock-google">
-          <GoogleSignIn onKey={withGoogle} />
-          <p className="error-line" role="alert">{googleError ? GOOGLE_ERRORS[googleError] : ''}</p>
-        </div>
-      )}
-      <form onSubmit={submit}>
-        <label htmlFor="password">{google ? 'Or the password' : 'Password'}</label>
-        <input id="password" type="password" autoComplete="current-password" autoFocus={!google} value={password} onChange={(e) => { setPassword(e.target.value); setState(null); }} aria-invalid={state === 'wrong'} aria-describedby="lock-error" />
-        <p id="lock-error" className="error-line" role="alert">{state === 'wrong' ? 'That password doesn’t open them.' : ''}</p>
+      <div className="lock-google">
+        <GoogleSignIn onKey={withGoogle} onUnavailable={unavailable} />
+        <p className="error-line" role="alert">{error ? GOOGLE_ERRORS[error] : ''}</p>
         <label className="check">
           <input type="checkbox" checked={onDevice} onChange={(e) => setOnDevice(e.target.checked)} /> Remember on this device
         </label>
-        <button type="submit" className="btn primary wide-btn" disabled={!password || state === 'opening'}>{state === 'opening' ? 'Opening…' : 'Open'}</button>
-      </form>
+      </div>
     </section>
   );
 }
