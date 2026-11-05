@@ -149,7 +149,7 @@ function Lock({ file, onOpen }) {
       <section className="panel lock denied" aria-labelledby="lock-title" role="alert">
         <h1 id="lock-title">Access denied</h1>
         <p className="denied-note">
-          <strong>{denied}</strong> isn’t allowed to see this page. These figures are private to {site.owner}.
+          <strong>{denied}</strong> isn’t allowed to see this page.
         </p>
         <button type="button" className="btn wide-btn" onClick={() => setDenied(null)}>Use a different Google account</button>
       </section>
